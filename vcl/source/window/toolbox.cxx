@@ -3108,6 +3108,10 @@ void ToolBox::MouseMove( const MouseEvent& rMEvt )
                 {
                     if ( (item.meType == ToolBoxItemType::BUTTON) && item.mbEnabled )
                     {
+                        if (mpData->m_aItems[nTempPos].mnBits & ToolBoxItemBits::DROPDOWN){
+                            this->MouseButtonHover(rMEvt, nTempPos);
+                        }
+
                         bClearHigh = false;
                         if ( mnHighItemId != item.mnId )
                         {
@@ -3363,6 +3367,99 @@ void ToolBox::MouseButtonDown( const MouseEvent& rMEvt )
 
     if ( !mbDrag && (mnCurPos == ITEM_NOTFOUND) )
         DockingWindow::MouseButtonDown( rMEvt );
+}
+
+void ToolBox::MouseButtonHover( const MouseEvent& rMEvt , const int nTempPos)
+{
+
+    // call activate already here, as items could
+    // be exchanged
+    Activate();
+
+    // update ToolBox here, such that user knows it
+    if ( mbFormat )
+    {
+        ImplFormat();
+        PaintImmediately();
+    }
+
+    Point  aMousePos = rMEvt.GetPosPixel();
+
+
+    if ( !mpData->m_aItems[nTempPos].mbEnabled )
+    {
+        Deactivate();
+        return;
+    }
+
+    // update actual data
+    StartTrackingFlags nTrackFlags = StartTrackingFlags::NONE;
+    mnCurPos         = nTempPos;
+    mnCurItemId      = mpData->m_aItems[nTempPos].mnId;
+    mnDownItemId     = mnCurItemId;
+    mnMouseModifier  = rMEvt.GetModifier();
+    if ( mpData->m_aItems[nTempPos].mnBits & ToolBoxItemBits::REPEAT )
+        nTrackFlags |= StartTrackingFlags::ButtonRepeat;
+
+    // update bDrag here, as it is evaluated in the EndSelection
+    mbDrag = true;
+
+    // on double-click: only call the handler, but do so before the button
+    // is hit, as in the handler dragging
+    // can be terminated
+    if ( rMEvt.GetClicks() == 2 )
+        DoubleClick();
+
+    if ( mbDrag )
+    {
+        InvalidateItem(mnCurPos);
+        Highlight();
+    }
+
+
+    if( ( (mpData->m_aItems[nTempPos].mnBits & ToolBoxItemBits::DROPDOWNONLY) == ToolBoxItemBits::DROPDOWNONLY)
+        || mpData->m_aItems[nTempPos].GetDropDownRect( mbHorz ).Contains( aMousePos ))
+    {
+        // dropdownonly always triggers the dropdown handler, over the whole button area
+
+        // the drop down arrow should not trigger the item action
+        mpData->mbDropDownByKeyboard = false;
+        mpData->maDropdownClickHdl.Call( this );
+
+        // do not reset data if the dropdown handler opened a floating window
+        // see ImplFloatControl()
+        if( !mpFloatWin )
+        {
+            // no floater was opened
+            Deactivate();
+            InvalidateItem(mnCurPos);
+
+            mnCurPos         = ITEM_NOTFOUND;
+            mnCurItemId      = ToolBoxItemId(0);
+            mnDownItemId     = ToolBoxItemId(0);
+            mnMouseModifier  = 0;
+            mnHighItemId     = ToolBoxItemId(0);
+        }
+        return;
+    }
+    else // activate long click timer
+        mpData->maDropdownTimer.Start();
+
+    // call Click handler
+    if ( rMEvt.GetClicks() != 2 )
+        Click();
+
+    // also call Select handler at repeat
+    if ( nTrackFlags & StartTrackingFlags::ButtonRepeat )
+        Select();
+
+    // if the actions was not aborted in Click handler
+    if ( mbDrag )
+        StartTracking( nTrackFlags );
+
+    // if mouse was clicked over an item we
+    // can abort here
+    return;
 }
 
 void ToolBox::MouseButtonUp( const MouseEvent& rMEvt )
